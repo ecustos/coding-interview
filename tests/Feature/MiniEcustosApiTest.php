@@ -8,7 +8,7 @@ use App\Domains\Core\Domain\Stage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
-class MiniEcostosApiTest extends TestCase
+class MiniEcustosApiTest extends TestCase
 {
     use RefreshDatabase;
 
