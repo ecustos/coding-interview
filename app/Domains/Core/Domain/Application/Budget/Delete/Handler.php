@@ -2,8 +2,9 @@
 
 namespace App\Domains\Core\Domain\Application\Budget\Delete;
 
+use App\Domains\Core\Domain\Budget;
 use App\Domains\Core\Domain\Contracts\BudgetRepository;
-use App\Domains\Core\Domain\Stage;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 class Handler
@@ -13,26 +14,13 @@ class Handler
     public function handle(Command $command): void
     {
         DB::transaction(function () use ($command): void {
-            $budget = $command->getBudget();
+            $budget = $this->budgetRepository->find($command->getBudgetId());
 
-            $budget->components()
-                ->whereNotNull('composition_id')
-                ->with('composition')
-                ->get()
-                ->each(fn ($component) => $component->composition?->delete());
-
-            $budget->components()
-                ->whereNotNull('input_id')
-                ->with('input')
-                ->get()
-                ->each(fn ($component) => $component->input?->delete());
-
-            $stageIds = $budget->components()
-                ->where('type', 'stage')
-                ->pluck('id');
+            if (! $budget) {
+                throw (new ModelNotFoundException)->setModel(Budget::class, [$command->getBudgetId()]);
+            }
 
             $this->budgetRepository->destroy($budget);
-            Stage::query()->whereIn('id', $stageIds)->delete();
         });
     }
 }

@@ -10,6 +10,11 @@ use Illuminate\Support\Collection;
 
 class BudgetRepository implements BudgetRepositoryContract
 {
+    public function find(int $budgetId): ?Budget
+    {
+        return Budget::query()->find($budgetId);
+    }
+
     public function save(Budget $budget): Budget
     {
         $budget->save();
@@ -20,15 +25,6 @@ class BudgetRepository implements BudgetRepositoryContract
     public function index(int $page = 1, int $perPage = 15): LengthAwarePaginator
     {
         return Budget::query()->orderBy('id')->paginate($perPage, ['*'], 'page', $page);
-    }
-
-    public function getRootStageTotal(Budget $budget): float
-    {
-        return (float) BudgetComponent::query()
-            ->where('budget_id', $budget->getId())
-            ->where('type', BudgetComponent::TYPE_STAGE)
-            ->whereNull('parent_stage_id')
-            ->sum('total');
     }
 
     public function components(Budget $budget): Collection

@@ -2,18 +2,16 @@
 
 namespace App\Domains\Core\Domain\Application\Budget\Update;
 
-use App\Domains\Core\Domain\Budget;
-
 class Command
 {
     public function __construct(
-        private Budget $budget,
+        private int $budgetId,
         private string $description,
     ) {}
 
-    public function getBudget(): Budget
+    public function getBudgetId(): int
     {
-        return $this->budget;
+        return $this->budgetId;
     }
 
     public function getDescription(): string

@@ -12,9 +12,7 @@ interface BudgetComponentRepository
 
     public function destroy(BudgetComponent $component): bool;
 
-    public function getStageChildrenTotal(int $stageId, string $type): float;
+    public function getByBudget(Budget $budget): Collection;
 
-    public function getRootStages(Budget $budget): Collection;
-
-    public function getChildren(BudgetComponent $component): Collection;
+    public function findForBudget(Budget $budget, int $componentId): ?BudgetComponent;
 }

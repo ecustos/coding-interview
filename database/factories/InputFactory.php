@@ -14,7 +14,7 @@ class InputFactory extends Factory
     {
         return [
             'description' => fake()->words(2, true),
-            'total' => fake()->randomFloat(2, 10, 300),
+            'unit_price' => fake()->randomFloat(2, 10, 300),
         ];
     }
 }

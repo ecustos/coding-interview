@@ -2,14 +2,12 @@
 
 namespace App\Domains\Core\Domain\Application\Budget\Show;
 
-use App\Domains\Core\Domain\Budget;
-
 class Command
 {
-    public function __construct(private Budget $budget) {}
+    public function __construct(private int $budgetId) {}
 
-    public function getBudget(): Budget
+    public function getBudgetId(): int
     {
-        return $this->budget;
+        return $this->budgetId;
     }
 }

@@ -21,29 +21,19 @@ class BudgetComponentRepository implements BudgetComponentRepositoryContract
         return (bool) $component->delete();
     }
 
-    public function getStageChildrenTotal(int $stageId, string $type): float
-    {
-        return (float) BudgetComponent::query()
-            ->where('type', $type)
-            ->where('parent_stage_id', $stageId)
-            ->sum('total');
-    }
-
-    public function getRootStages(Budget $budget): Collection
+    public function getByBudget(Budget $budget): Collection
     {
         return BudgetComponent::query()
             ->where('budget_id', $budget->getId())
-            ->where('type', BudgetComponent::TYPE_STAGE)
-            ->whereNull('parent_stage_id')
             ->orderBy('id')
             ->get();
     }
 
-    public function getChildren(BudgetComponent $component): Collection
+    public function findForBudget(Budget $budget, int $componentId): ?BudgetComponent
     {
         return BudgetComponent::query()
-            ->where('parent_stage_id', $component->getId())
-            ->orderBy('id')
-            ->get();
+            ->where('budget_id', $budget->getId())
+            ->where('id', $componentId)
+            ->first();
     }
 }

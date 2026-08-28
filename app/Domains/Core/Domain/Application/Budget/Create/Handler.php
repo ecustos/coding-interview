@@ -12,8 +12,7 @@ class Handler
     public function handle(Command $command): Budget
     {
         $budget = (new Budget)
-            ->setDescription($command->getDescription())
-            ->setTotal(0);
+            ->setDescription($command->getDescription());
 
         return $this->budgetRepository->save($budget);
     }

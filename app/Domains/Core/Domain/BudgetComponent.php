@@ -2,31 +2,34 @@
 
 namespace App\Domains\Core\Domain;
 
+use Database\Factories\BudgetComponentFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BudgetComponent extends Model
 {
+    /** @use HasFactory<BudgetComponentFactory> */
+    use HasFactory;
+
     public const TYPE_STAGE = 'stage';
 
     public const TYPE_COMPOSITION = 'composition';
 
     public const TYPE_INPUT = 'input';
 
-    public const COMPOSITION_OFFSET = 1_000_000;
+    protected static ?string $componentType = null;
 
-    public const INPUT_OFFSET = 2_000_000;
-
-    public $incrementing = false;
+    protected $table = 'budget_components';
 
     protected $fillable = [
-        'id',
         'description',
         'type',
         'budget_id',
         'composition_id',
         'input_id',
-        'parent_stage_id',
         'total',
     ];
 
@@ -37,19 +40,42 @@ class BudgetComponent extends Model
         ];
     }
 
-    public static function idForStage(Stage $stage): int
+    protected static function newFactory(): Factory
     {
-        return (int) $stage->id;
+        return BudgetComponentFactory::new();
     }
 
-    public static function idForComposition(Composition $composition): int
+    protected static function booted(): void
     {
-        return self::COMPOSITION_OFFSET + (int) $composition->id;
+        if (static::$componentType === null) {
+            return;
+        }
+
+        static::addGlobalScope('component_type', function (Builder $builder): void {
+            $builder->where('type', static::$componentType);
+        });
     }
 
-    public static function idForInput(Input $input): int
+    public function newFromBuilder($attributes = [], $connection = null)
     {
-        return self::INPUT_OFFSET + (int) $input->id;
+        if (static::class !== self::class) {
+            return parent::newFromBuilder($attributes, $connection);
+        }
+
+        $attributes = (array) $attributes;
+        $modelClass = match ($attributes['type'] ?? null) {
+            self::TYPE_STAGE => StageBudgetComponent::class,
+            self::TYPE_COMPOSITION => CompositionBudgetComponent::class,
+            self::TYPE_INPUT => InputBudgetComponent::class,
+            default => static::class,
+        };
+
+        $model = (new $modelClass)->newInstance([], true);
+        $model->setRawAttributes($attributes, true);
+        $model->setConnection($connection ?? $this->getConnectionName());
+        $model->fireModelEvent('retrieved', false);
+
+        return $model;
     }
 
     public function budget(): BelongsTo
@@ -67,11 +93,6 @@ class BudgetComponent extends Model
         return $this->belongsTo(Input::class);
     }
 
-    public function parentStage(): BelongsTo
-    {
-        return $this->belongsTo(Stage::class, 'parent_stage_id');
-    }
-
     public function getId(): int
     {
         return $this->id;
@@ -82,8 +103,35 @@ class BudgetComponent extends Model
         return $this->type;
     }
 
-    public function getParentStageId(): ?int
+    public function setBudgetId(int $budgetId): self
     {
-        return $this->parent_stage_id;
+        $this->budget_id = $budgetId;
+
+        return $this;
     }
+
+    public function getDescription(): string
+    {
+        return $this->description;
+    }
+
+    public function setDescription(string $description): self
+    {
+        $this->description = $description;
+
+        return $this;
+    }
+
+    public function getTotal(): float
+    {
+        return (float) $this->total;
+    }
+
+    public function setTotal(float $total): self
+    {
+        $this->total = $total;
+
+        return $this;
+    }
+
 }

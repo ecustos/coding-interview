@@ -4,8 +4,13 @@ namespace Tests\Feature;
 
 use App\Domains\Core\Domain\Budget;
 use App\Domains\Core\Domain\BudgetComponent;
-use App\Domains\Core\Domain\Stage;
+use App\Domains\Core\Domain\Composition;
+use App\Domains\Core\Domain\CompositionBudgetComponent;
+use App\Domains\Core\Domain\Input;
+use App\Domains\Core\Domain\InputBudgetComponent;
+use App\Domains\Core\Domain\StageBudgetComponent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MiniEcustosApiTest extends TestCase
@@ -39,151 +44,228 @@ class MiniEcustosApiTest extends TestCase
         $this->assertDatabaseMissing('budgets', ['id' => $budgetId]);
     }
 
-    public function test_creates_stage_substage_composition_and_input_with_totals(): void
+    public function test_budget_show_update_and_delete_return_404_for_missing_budget(): void
     {
-        $budget = Budget::factory()->create();
+        $this->getJson('/api/budgets/999')
+            ->assertNotFound();
 
-        $stage = $this->postJson("/api/budgets/{$budget->id}/stages", [
-            'description' => 'Stage 1',
-        ])->assertCreated()->json();
+        $this->putJson('/api/budgets/999', [
+            'description' => 'Reforma Residencial',
+        ])->assertNotFound();
 
-        $subStage = $this->postJson("/api/budgets/{$budget->id}/stages", [
-            'description' => 'Stage 1.1',
-            'parent_stage_id' => $stage['id'],
-        ])->assertCreated()->json();
-
-        $this->postJson("/api/stages/{$subStage['id']}/inputs", [
-            'description' => 'Cimento',
-            'total' => 100,
-        ])->assertCreated();
-
-        $this->postJson("/api/stages/{$stage['id']}/compositions", [
-            'description' => 'Concreto',
-            'total' => 200,
-        ])->assertCreated();
-
-        $this->postJson("/api/stages/{$stage['id']}/inputs", [
-            'description' => 'Areia',
-            'total' => 50,
-        ])->assertCreated();
-
-        $this->assertSame('100.00', Stage::query()->find($subStage['id'])->total);
-        $this->assertSame('350.00', Stage::query()->find($stage['id'])->total);
-        $this->assertSame('350.00', $budget->refresh()->total);
+        $this->deleteJson('/api/budgets/999')
+            ->assertNotFound();
     }
 
-    public function test_updates_entities_and_recalculates_root_stage_total(): void
+    public function test_budget_component_crud_flow_uses_a_single_route_for_every_type(): void
     {
         $budget = Budget::factory()->create();
-        $stage = $this->postJson("/api/budgets/{$budget->id}/stages", [
-            'description' => 'Stage 1',
-        ])->json();
+        $compositionReference = Composition::factory()->create();
+        $updatedCompositionReference = Composition::factory()->create();
+        $inputReference = Input::factory()->create();
 
-        $input = $this->postJson("/api/stages/{$stage['id']}/inputs", [
-            'description' => 'Brita',
-            'total' => 30,
-        ])->json();
+        $stage = $this->createComponent($budget, BudgetComponent::TYPE_STAGE, 'Servicos preliminares');
+        $composition = $this->createComponent($budget, BudgetComponent::TYPE_COMPOSITION, 'Concreto', 200, compositionId: $compositionReference->id);
+        $input = $this->createComponent($budget, BudgetComponent::TYPE_INPUT, 'Areia', 50, inputId: $inputReference->id);
 
-        $this->putJson("/api/inputs/{$input['id']}", [
-            'description' => 'Brita lavada',
-            'total' => 90,
-        ])->assertOk()
-            ->assertJsonPath('description', 'Brita lavada')
-            ->assertJsonPath('total', '90.00');
-
-        $this->assertSame('90.00', Stage::query()->find($stage['id'])->total);
-        $this->assertSame('90.00', $budget->refresh()->total);
-    }
-
-    public function test_lists_stage_compositions_and_inputs(): void
-    {
-        $budget = Budget::factory()->create();
-        $stage = $this->postJson("/api/budgets/{$budget->id}/stages", [
-            'description' => 'Stage 1',
-        ])->json();
-
-        $this->postJson("/api/stages/{$stage['id']}/compositions", [
-            'description' => 'Alvenaria',
-            'total' => 180,
-        ]);
-
-        $this->postJson("/api/stages/{$stage['id']}/inputs", [
-            'description' => 'Bloco',
-            'total' => 70,
-        ]);
-
-        $this->getJson("/api/stages/{$stage['id']}/compositions")
+        $this->getJson("/api/budget/{$budget->id}/component")
             ->assertOk()
-            ->assertJsonCount(1)
-            ->assertJsonPath('0.description', 'Alvenaria');
+            ->assertJsonCount(3)
+            ->assertJsonPath('0.description', 'Servicos preliminares')
+            ->assertJsonPath('1.type', BudgetComponent::TYPE_COMPOSITION)
+            ->assertJsonPath('2.type', BudgetComponent::TYPE_INPUT);
 
-        $this->getJson("/api/stages/{$stage['id']}/inputs")
+        $this->getJson("/api/budget/{$budget->id}/component/{$composition['id']}")
             ->assertOk()
-            ->assertJsonCount(1)
-            ->assertJsonPath('0.description', 'Bloco');
+            ->assertJsonPath('description', 'Concreto');
+
+        $this->putJson("/api/budget/{$budget->id}/component/{$composition['id']}", [
+            'type' => BudgetComponent::TYPE_COMPOSITION,
+            'description' => 'Concreto usinado',
+            'total' => 300,
+            'composition_id' => $updatedCompositionReference->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('description', 'Concreto usinado')
+            ->assertJsonPath('composition_id', $updatedCompositionReference->id)
+            ->assertJsonPath('total', '300.00');
+
+        $this->deleteJson("/api/budget/{$budget->id}/component/{$input['id']}")
+            ->assertNoContent();
+
+        $this->assertDatabaseHas('budget_components', ['id' => $stage['id']]);
+        $this->assertDatabaseMissing('budget_components', ['id' => $input['id']]);
+        $this->assertSame('0.00', $budget->refresh()->total);
     }
 
-    public function test_composition_and_input_need_a_stage_context(): void
+    public function test_budget_component_records_are_returned_as_concrete_component_classes(): void
     {
         $budget = Budget::factory()->create();
+        $compositionReference = Composition::factory()->create();
+        $inputReference = Input::factory()->create();
+        $stage = StageBudgetComponent::factory()->for($budget)->create(['description' => 'Servicos preliminares']);
+        $composition = CompositionBudgetComponent::factory()
+            ->for($budget)
+            ->for($compositionReference)
+            ->create();
+        $input = InputBudgetComponent::factory()
+            ->for($budget)
+            ->for($inputReference)
+            ->create();
 
-        $this->postJson("/api/budgets/{$budget->id}/compositions", [
-            'description' => 'Sem etapa',
-            'total' => 10,
-        ])->assertUnprocessable();
-
-        $this->postJson("/api/budgets/{$budget->id}/inputs", [
-            'description' => 'Sem etapa',
-            'total' => 10,
-        ])->assertUnprocessable();
+        $this->assertInstanceOf(StageBudgetComponent::class, BudgetComponent::query()->findOrFail($stage->id));
+        $this->assertInstanceOf(CompositionBudgetComponent::class, BudgetComponent::query()->findOrFail($composition->id));
+        $this->assertInstanceOf(InputBudgetComponent::class, BudgetComponent::query()->findOrFail($input->id));
     }
 
-    public function test_deletes_leaf_entities_and_their_components(): void
+    public function test_budget_show_returns_components(): void
     {
         $budget = Budget::factory()->create();
-        $stage = $this->postJson("/api/budgets/{$budget->id}/stages", [
-            'description' => 'Stage 1',
-        ])->json();
-
-        $composition = $this->postJson("/api/stages/{$stage['id']}/compositions", [
-            'description' => 'Pintura',
-            'total' => 100,
-        ])->json();
-
-        $input = $this->postJson("/api/stages/{$stage['id']}/inputs", [
-            'description' => 'Tinta',
-            'total' => 60,
-        ])->json();
-
-        $this->deleteJson("/api/compositions/{$composition['id']}")->assertNoContent();
-        $this->deleteJson("/api/inputs/{$input['id']}")->assertNoContent();
-
-        $this->assertDatabaseMissing('compositions', ['id' => $composition['id']]);
-        $this->assertDatabaseMissing('inputs', ['id' => $input['id']]);
-        $this->assertDatabaseMissing('budget_components', [
-            'id' => BudgetComponent::COMPOSITION_OFFSET + $composition['id'],
-        ]);
-        $this->assertDatabaseMissing('budget_components', [
-            'id' => BudgetComponent::INPUT_OFFSET + $input['id'],
-        ]);
-    }
-
-    public function test_budget_show_returns_component_structure(): void
-    {
-        $budget = Budget::factory()->create();
-        $stage = $this->postJson("/api/budgets/{$budget->id}/stages", [
-            'description' => 'Stage 1',
-        ])->json();
-
-        $this->postJson("/api/stages/{$stage['id']}/inputs", [
-            'description' => 'Madeira',
-            'total' => 75,
-        ]);
+        $inputReference = Input::factory()->create();
+        $this->createComponent($budget, BudgetComponent::TYPE_STAGE, 'Servicos preliminares');
+        $this->createComponent($budget, BudgetComponent::TYPE_INPUT, 'Madeira', 75, inputId: $inputReference->id);
 
         $this->getJson("/api/budgets/{$budget->id}")
             ->assertOk()
             ->assertJsonPath('description', $budget->description)
-            ->assertJsonPath('components.0.description', 'Stage 1')
-            ->assertJsonPath('components.0.children.0.description', 'Madeira');
+            ->assertJsonPath('components.0.description', 'Servicos preliminares')
+            ->assertJsonPath('components.1.description', 'Madeira');
+    }
+
+    public function test_budget_component_rejects_unknown_type(): void
+    {
+        $budget = Budget::factory()->create();
+
+        $this->postJson("/api/budget/{$budget->id}/component", [
+            'type' => 'service',
+            'description' => 'Servico',
+            'total' => 10,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['type']);
+    }
+
+    public function test_budget_component_rejects_unsupported_fields(): void
+    {
+        $budget = Budget::factory()->create();
+
+        $this->postJson("/api/budget/{$budget->id}/component", [
+            'type' => BudgetComponent::TYPE_STAGE,
+            'description' => 'Servicos preliminares',
+            'metadata' => 'extra',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['metadata']);
+    }
+
+    #[DataProvider('componentSpecificIdProvider')]
+    public function test_budget_component_requires_the_specific_id_for_composition_and_input(string $type, string $field): void
+    {
+        $budget = Budget::factory()->create();
+
+        $this->postJson("/api/budget/{$budget->id}/component", [
+            'type' => $type,
+            'description' => 'Servico',
+            'total' => 10,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([$field]);
+    }
+
+    #[DataProvider('componentSpecificIdProvider')]
+    public function test_budget_component_rejects_unknown_specific_id_for_composition_and_input(string $type, string $field): void
+    {
+        $budget = Budget::factory()->create();
+
+        $this->postJson("/api/budget/{$budget->id}/component", [
+            'type' => $type,
+            'description' => 'Servico',
+            'total' => 10,
+            $field => 999,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([$field]);
+    }
+
+    public function test_budget_component_update_rejects_type_mismatch(): void
+    {
+        $budget = Budget::factory()->create();
+        $compositionReference = Composition::factory()->create();
+        $inputReference = Input::factory()->create();
+        $input = $this->createComponent($budget, BudgetComponent::TYPE_INPUT, 'Tinta', 60, inputId: $inputReference->id);
+
+        $this->putJson("/api/budget/{$budget->id}/component/{$input['id']}", [
+            'type' => BudgetComponent::TYPE_COMPOSITION,
+            'description' => 'Tinta',
+            'total' => 60,
+            'composition_id' => $compositionReference->id,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['type']);
+    }
+
+    public function test_budget_component_from_another_budget_returns_404(): void
+    {
+        $sourceBudget = Budget::factory()->create();
+        $targetBudget = Budget::factory()->create();
+        $component = $this->createComponent($sourceBudget, BudgetComponent::TYPE_STAGE, 'Servicos preliminares');
+
+        $this->getJson("/api/budget/{$targetBudget->id}/component/{$component['id']}")
+            ->assertNotFound();
+    }
+
+    public function test_budget_component_show_update_and_delete_return_404_for_missing_component(): void
+    {
+        $budget = Budget::factory()->create();
+
+        $this->getJson("/api/budget/{$budget->id}/component/999")
+            ->assertNotFound();
+
+        $this->putJson("/api/budget/{$budget->id}/component/999", [
+            'type' => BudgetComponent::TYPE_STAGE,
+            'description' => 'Servicos preliminares',
+            'total' => 0,
+        ])->assertNotFound();
+
+        $this->deleteJson("/api/budget/{$budget->id}/component/999")
+            ->assertNotFound();
+    }
+
+    private function createComponent(
+        Budget $budget,
+        string $type,
+        string $description,
+        ?float $total = null,
+        ?int $compositionId = null,
+        ?int $inputId = null,
+    ): array {
+        $payload = [
+            'type' => $type,
+            'description' => $description,
+        ];
+
+        if ($total !== null) {
+            $payload['total'] = $total;
+        }
+
+        if ($compositionId !== null) {
+            $payload['composition_id'] = $compositionId;
+        }
+
+        if ($inputId !== null) {
+            $payload['input_id'] = $inputId;
+        }
+
+        return $this->postJson("/api/budget/{$budget->id}/component", $payload)
+            ->assertCreated()
+            ->json();
+    }
+
+    public static function componentSpecificIdProvider(): array
+    {
+        return [
+            'composition id' => [BudgetComponent::TYPE_COMPOSITION, 'composition_id'],
+            'input id' => [BudgetComponent::TYPE_INPUT, 'input_id'],
+        ];
     }
 }
