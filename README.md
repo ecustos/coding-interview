@@ -47,13 +47,35 @@ Não é necessário implementar autenticação, autorização, frontend, filas, 
 ## Requisitos
 
 - PHP 8.3+
+- Extensão PHP `pdo_sqlite`
 - Composer
 - SQLite
-- Make
+- Node.js 20+ e npm
+- Make, para usar os comandos `make` em Linux/macOS
 
 ## Executando o Projeto
 
-Use o Makefile para preparar e executar o projeto:
+Para instalar as dependências do sistema e do projeto, use o script adequado para o seu ambiente.
+
+Linux/macOS:
+
+```sh
+./scripts/install-dependencies.sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dependencies.ps1
+```
+
+Os scripts verificam ou instalam PHP 8.3+, Composer, SQLite, Node.js/npm e as dependências do projeto (`composer install` e `npm install`). Eles também criam `.env`, `database/database.sqlite` e `APP_KEY` quando necessário.
+
+Caso prefira instalar manualmente as ferramentas do sistema, execute os scripts com `SKIP_SYSTEM_INSTALL=1` no Linux/macOS ou `-SkipSystemInstall` no Windows.
+
+Depois disso, use o Makefile para preparar e executar o projeto:
+
+Linux/macOS:
 
 ```sh
 make dev
