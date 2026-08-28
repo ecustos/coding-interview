@@ -13,7 +13,9 @@ O candidato deve resolver dois desafios principais:
 - Montar a árvore do orçamento a partir da lista plana de `budget_components`.
 - Implementar o recálculo de etapas e orçamento quando composições ou insumos forem adicionados, alterados ou removidos.
 
-A hierarquia do orçamento deve ser inferida a partir do `level` de cada componente. Valores como:
+A implementação inicial ainda não possui uma forma completa de representar hierarquia entre componentes. O candidato deve evoluir o modelo de dados, validações, payloads, resources, seeders e testes conforme necessário para que cada componente possa ser posicionado dentro da árvore.
+
+Uma solução simples e esperada é usar um campo como `level` para indicar a posição hierárquica de cada componente. Valores como:
 
 ```text
 1
@@ -26,6 +28,21 @@ A hierarquia do orçamento deve ser inferida a partir do `level` de cada compone
 representam diferentes níveis dentro da estrutura do orçamento.
 
 A base atual não monta `children`, não calcula ancestrais e não propaga totais; esses pontos fazem parte do desafio.
+
+## Entrega Esperada
+
+Ao final do desafio, espera-se que:
+
+- a API continue executando localmente pelos comandos descritos neste README;
+- os endpoints de consulta de orçamento/componentes consigam retornar a estrutura hierárquica com `children`;
+- a criação, edição e remoção de componentes mantenham a árvore e os totais consistentes;
+- o seed ou os testes possuam dados suficientes para validar cenários com stages, sub-stages, compositions e inputs;
+- a suíte de testes cubra a nova feature e continue validando os fluxos de CRUD já existentes;
+- as decisões relevantes de implementação sejam simples de entender pelo código ou por pequenos comentários quando necessário.
+
+## Fora de Escopo
+
+Não é necessário implementar autenticação, autorização, frontend, filas, cache, integrações externas ou CRUD para `inputs` e `compositions`. O foco do teste é a evolução do domínio de orçamento, incluindo hierarquia, recálculo, persistência dos dados necessários e testes.
 
 ## Requisitos
 
@@ -97,7 +114,7 @@ O projeto usa SQLite por padrão. O comando `make dev` cria automaticamente o ar
 database/database.sqlite
 ```
 
-O seed cria os cadastros-base de `inputs` e `compositions`, além do orçamento `Reforma` com componentes em lista plana e diferentes níveis hierárquicos.
+O seed cria os cadastros-base de `inputs` e `compositions`, além do orçamento `Reforma` com componentes em lista plana. A estrutura inicial é propositalmente incompleta: ela possui stages, compositions e inputs, mas ainda não possui a árvore pronta nem todos os dados necessários para inferi-la automaticamente.
 
 Os totais das folhas possuem valores de exemplo, mas as etapas e o orçamento permanecem com total `0.00` de propósito. O candidato deve implementar a propagação correta.
 
@@ -174,11 +191,17 @@ Esta API não possui CRUD para `compositions`.
 
 `StageBudgetComponent`, `CompositionBudgetComponent` e `InputBudgetComponent` são classes concretas que herdam de `BudgetComponent` e persistem na mesma tabela.
 
-A transformação dessa lista em uma árvore hierárquica faz parte do desafio técnico.
+A transformação dessa lista em uma árvore hierárquica faz parte do desafio técnico. Caso a solução adicione campos como `level`, `parent_id` ou outro mecanismo equivalente, atualize também migration, model, factories, seeders, validações, resources e testes para refletir a nova estrutura.
 
 ## Regras de Hierarquia
 
-As regras abaixo descrevem o comportamento esperado após a implementação da árvore:
+A API entrega os componentes do orçamento como uma lista plana de registros em `budget_components`. Parte do desafio é refatorar essa representação para que o orçamento possa ser interpretado e retornado como uma estrutura de árvore, com componentes filhos dentro de seus respectivos pais.
+
+Essa árvore deve ser construída a partir da hierarquia dos componentes do orçamento e usada como base para navegação, exibição e recálculo. A implementação deve respeitar o desenho atual da aplicação: controllers devem continuar simples, Handlers devem coordenar o caso de uso, repositories devem concentrar acesso a dados e qualquer regra de montagem da árvore deve ficar em uma camada coerente com o domínio.
+
+Antes de montar a árvore, a solução precisa definir como a posição de cada componente será persistida.
+
+As regras abaixo descrevem o comportamento esperado após a implementação:
 
 - Uma Stage pode ser raiz do Budget.
 - Uma Stage pode possuir sub-stages, compositions e inputs.
@@ -207,25 +230,23 @@ Budget: Reforma
 
 ## Estratégia de Cálculo
 
-A estratégia de cálculo ainda deve ser implementada pelo candidato.
+A estratégia de cálculo ainda deve ser implementada pelo candidato. A tarefa é criar um mecanismo de recálculo recursivo para manter os totais das etapas e do orçamento sempre coerentes com os componentes cadastrados.
 
-O total de uma Stage deve ser a soma dos totais dos elementos diretamente pertencentes a ela:
+A base atual persiste os componentes em uma lista plana na tabela `budget_components` e diferencia cada registro pelo campo `type`, usando as classes concretas `StageBudgetComponent`, `CompositionBudgetComponent` e `InputBudgetComponent`. O mecanismo implementado deve partir dessa estrutura, montar ou percorrer a hierarquia conforme as regras descritas neste README e recalcular os totais sem descaracterizar a arquitetura existente do projeto.
 
-- sub-stages;
-- compositions;
-- inputs.
+O comportamento esperado é:
 
-Ao recalcular uma Stage, o total atualizado deve ser propagado para suas Stages ancestrais.
+- o total de uma Stage deve ser a soma dos totais dos elementos diretamente pertencentes a ela: sub-stages, compositions e inputs;
+- ao recalcular uma Stage, o novo total deve ser propagado recursivamente para suas Stages ancestrais;
+- o total do Budget deve ser a soma das Stages principais identificadas na raiz da hierarquia;
+- quando um componente for criado, atualizado ou removido, o recálculo deve ser executado para o trecho afetado da árvore e refletir no Budget;
+- Composition e Input continuam sendo cadastros de referência; o valor considerado no orçamento deve ser o valor persistido em `budget_components.total`, não o total das tabelas `compositions` ou `inputs`.
 
-O total do Budget deve ser a soma das Stages principais identificadas pela estrutura hierárquica.
+A implementação deve seguir a organização do projeto o mais fielmente possível. Controllers devem permanecer responsáveis por request/validação e montagem de Commands; Handlers devem orquestrar o caso de uso; repositories devem continuar isolando o acesso Eloquent; e novas regras de domínio ou serviços devem ser posicionados em locais compatíveis com a estrutura de `app/Domains/Core/Domain`.
 
-Nesta base, Composition e Input são cadastros de referência.
+Também é esperado que a solução aplique conceitos SOLID: responsabilidades bem separadas, baixo acoplamento entre cálculo e infraestrutura, dependências preferencialmente orientadas por contratos quando fizer sentido e código aberto a extensão sem espalhar regras de cálculo pelos controllers.
 
-O valor usado no orçamento fica em `budget_components.total`.
-
-Esta versão inicial não recalcula automaticamente o total da etapa nem do Budget quando um componente é criado, atualizado ou removido.
-
-Não há implementação de recálculo nesta base; esse comportamento faz parte da análise esperada no desafio.
+A feature deve ser coberta por testes. Inclua cenários que validem o recálculo em criação, edição e remoção de componentes, propagação para etapas ancestrais e atualização do total do Budget. Ajuste ou reexecute os testes existentes sempre que necessário para garantir que o CRUD atual continue funcionando junto com o novo comportamento.
 
 ## Endpoints
 
@@ -243,7 +264,7 @@ Payload de criação/edição:
 
 ```json
 {
-  "description": "Reforma"
+    "description": "Reforma"
 }
 ```
 
@@ -261,8 +282,8 @@ Payload para criar uma Stage:
 
 ```json
 {
-  "type": "stage",
-  "description": "Stage 1"
+    "type": "stage",
+    "description": "Stage 1"
 }
 ```
 
@@ -270,10 +291,10 @@ Payload para criar uma Composition:
 
 ```json
 {
-  "type": "composition",
-  "description": "Concreto",
-  "composition_id": 123,
-  "total": 500
+    "type": "composition",
+    "description": "Concreto",
+    "composition_id": 123,
+    "total": 500
 }
 ```
 
@@ -281,10 +302,10 @@ Payload para criar um Input:
 
 ```json
 {
-  "type": "input",
-  "description": "Cimento",
-  "input_id": 456,
-  "total": 100
+    "type": "input",
+    "description": "Cimento",
+    "input_id": 456,
+    "total": 100
 }
 ```
 
