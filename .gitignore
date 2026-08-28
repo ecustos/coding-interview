@@ -1,5 +1,7 @@
 *.log
 .DS_Store
+/.agents/
+/.claude/
 .env
 .env.backup
 .env.production
@@ -12,7 +14,11 @@
 /.phpunit.cache
 /.vscode
 /.zed
+/AGENTS.md
 /auth.json
+/CLAUDE.md
+/database/*.sqlite
+/database/*.sqlite-*
 /node_modules
 /public/build
 /public/fonts-manifest.dev.json
